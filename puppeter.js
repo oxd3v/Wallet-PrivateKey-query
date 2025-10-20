@@ -1,3 +1,5 @@
+//const { firefox, webkit, chromium } = require('playwright');
+//const BROWSER_ENGINE = (process.env.BROWSER_ENGINE || 'firefox').toLowerCase();
 const puppeteer = require('puppeteer');
 
 // Browser pool configuration
@@ -5,105 +7,75 @@ const MAX_CONCURRENT_PAGES = parseInt(process.env.MAX_CONCURRENT_PAGES) || 10;
 const PAGE_TIMEOUT = parseInt(process.env.PAGE_TIMEOUT) || 30000;
 const NAVIGATION_TIMEOUT = parseInt(process.env.NAVIGATION_TIMEOUT) || 60000;
 
-// Global browser instance and page pool
+// Global browser instance and page/context pool
 let browser = null;
+let contextPool = [];
 let pagePool = [];
 let busyPages = new Set();
+
+// Block non-essential resources to speed up page loads
+const requestHandler = (req) => {
+    const type = req.resourceType();
+    if (type === 'image' || type === 'stylesheet' || type === 'font' || type === 'media') {
+        req.abort();
+    } else {
+        req.continue();
+    }
+};
+
+// Configure a page with sane defaults and performance optimizations
+const configurePage = async (page) => {
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/117 Safari/537.36');
+    await page.setViewport({ width: 1280, height: 720 });
+    await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
+    page.setDefaultTimeout(PAGE_TIMEOUT);
+    page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT);
+    await page.setRequestInterception(true);
+    page.removeAllListeners('request');
+    page.on('request', requestHandler);
+};
 
 // Initialize browser with optimized settings
 const initializeBrowser = async () => {
     if (browser) return browser;
-    
-    console.log('🌐 Initializing optimized browser...');
-    
-    const launchOptions = {
-        headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--disable-gpu',
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding',
-            '--disable-features=TranslateUI',
-            '--disable-ipc-flooding-protection',
-            '--disable-web-security',
-            '--disable-features=VizDisplayCompositor',
-            '--disable-extensions',
-            '--disable-default-apps',
-            '--disable-sync',
-            '--disable-translate',
-            '--hide-scrollbars',
-            '--mute-audio'
-        ]
-    };
 
-    // Use custom executable path if provided, otherwise use Chrome for Testing
-    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-        console.log(`Using custom Chrome path: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
-    }
+    console.log('🌐 Initializing optimized browser (Puppeteer)...');
 
-    try {
-        browser = await puppeteer.launch(launchOptions);
-        console.log(`✅ Browser launched successfully with Chrome version: ${await browser.version()}`);
-    } catch (error) {
-        console.error('❌ Failed to launch browser:', error.message);
-        
-        // Fallback: try with system Chrome
-        if (!process.env.PUPPETEER_EXECUTABLE_PATH) {
-            console.log('🔄 Attempting fallback to system Chrome...');
-            try {
-                launchOptions.channel = 'chrome';
-                browser = await puppeteer.launch(launchOptions);
-                console.log('✅ Fallback successful - using system Chrome');
-            } catch (fallbackError) {
-                console.error('❌ Fallback also failed:', fallbackError.message);
-                throw new Error(`Browser initialization failed. Please ensure Chrome is installed or run: npx puppeteer browsers install chrome@stable`);
-            }
-        } else {
-            throw error;
-        }
-    }
-    
-    // Pre-create page pool
+    // Select engine based on env
+    //const engine = BROWSER_ENGINE === 'webkit' ? webkit : BROWSER_ENGINE === 'chromium' ? chromium : firefox;
+
+    browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+
+    // Pre-create page pool with optimized settings
     for (let i = 0; i < MAX_CONCURRENT_PAGES; i++) {
         const page = await browser.newPage();
-        
-        // Optimize page settings
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/117 Safari/537.36');
-        await page.setViewport({ width: 1280, height: 720 });
-        
-        // Disable images and CSS for faster loading
-        await page.setRequestInterception(true);
-        page.on('request', (req) => {
-            const resourceType = req.resourceType();
-            if (resourceType === 'image' || resourceType === 'stylesheet' || resourceType === 'font') {
-                req.abort();
-            } else {
-                req.continue();
-            }
-        });
-        
+        await configurePage(page);
         pagePool.push(page);
     }
-    
+
     console.log(`✅ Browser initialized with ${MAX_CONCURRENT_PAGES} pages`);
     return browser;
 };
 
 // Get available page from pool
 const getPage = async () => {
+    // Ensure browser and pool are ready
+    if (!browser || pagePool.length === 0) {
+        await initializeBrowser();
+    }
+
     // Wait for available page
     while (pagePool.length === 0) {
         await new Promise(resolve => setTimeout(resolve, 50));
     }
-    
-    const page = pagePool.pop();
+
+    let page = pagePool.pop();
+    // Replace closed pages with fresh ones
+    if (page.isClosed && page.isClosed()) {
+        page = await browser.newPage();
+        await configurePage(page);
+    }
+
     busyPages.add(page);
     return page;
 };
@@ -119,19 +91,19 @@ const returnPage = (page) => {
 // Optimized portfolio value checking
 const getPortFolioValue = async ({ walletAddress }) => {
     let page = null;
-    
+
     try {
         page = await getPage();
-        
+
         // Navigate to wallet page with timeout
         await page.goto(`https://zapper.xyz/account/${walletAddress}`, {
             waitUntil: 'domcontentloaded',
             timeout: NAVIGATION_TIMEOUT
         });
-        
+
         // Wait for net worth element with shorter timeout
-        await page.waitForSelector('[data-testid="net-worth"]', { 
-            timeout: PAGE_TIMEOUT 
+        await page.waitForSelector('[data-testid="net-worth"]', {
+            timeout: PAGE_TIMEOUT
         });
 
         const netWorth = await page.evaluate(() => {
@@ -139,9 +111,9 @@ const getPortFolioValue = async ({ walletAddress }) => {
             if (!el) return null;
             return el.innerText.trim();
         });
-        
-        return netWorth;
-        
+        console.log(netWorth);
+        return netWorth || '$0';
+
     } catch (error) {
         // Handle common errors gracefully
         if (error.name === 'TimeoutError') {
@@ -168,18 +140,17 @@ const getPortFolioValue = async ({ walletAddress }) => {
 const closeBrowser = async () => {
     if (browser) {
         console.log('🔄 Closing browser...');
-        
-        // Close all pages
-        const pages = await browser.pages();
-        await Promise.all(pages.map(page => page.close().catch(() => {})));
-        
-        // Close browser
-        await browser.close();
-        browser = null;
-        pagePool = [];
-        busyPages.clear();
-        
-        console.log('✅ Browser closed');
+        try {
+            // Close contexts and pages
+            await Promise.all(pagePool.map(page => page.close().catch(() => {})));
+            await browser.close();
+        } finally {
+            browser = null;
+            contextPool = [];
+            pagePool = [];
+            busyPages.clear();
+            console.log('✅ Browser closed');
+        }
     }
 };
 
@@ -198,12 +169,12 @@ const getBrowserStats = () => {
     };
 };
 
-module.exports = { 
-    getPortFolioValue, 
-    initializeBrowser, 
-    closeBrowser, 
-    isBrowserHealthy, 
-    getBrowserStats 
+module.exports = {
+    getPortFolioValue,
+    initializeBrowser,
+    closeBrowser,
+    isBrowserHealthy,
+    getBrowserStats
 };
 
 // Example usage (commented out):
