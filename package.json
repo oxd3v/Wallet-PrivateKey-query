@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "start": "playwright install firefox && node config",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
@@ -12,7 +13,7 @@
     "dotenv": "^17.2.3",
     "ethers": "^5.8.0",
     "mongoose": "^8.19.1",
-    "puppeteer": "^24.25.0",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
+    "playwright": "^1.56.1",
+    "puppeteer": "^24.25.0"
   }
 }
