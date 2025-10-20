@@ -44,17 +44,20 @@ let Continue = true;
 const checkPrivateKeyHaveFund = async (privateKey) => {
   const wallet = new Wallet(privateKey);
   if (!wallet.address) return false;
+  let walletAddress = wallet.address;
 
   try {
     const value = await getPortFolioValue({ walletAddress: wallet.address });
     if(!value){
       return {
+        walletAddress, 
         haveFund: false,
         value
       }
     }
     // If it ends with B/M/K (billions/millions/thousands) or is not exactly "$0"
     if (value !== '$0' && ['B', 'M', 'K'].includes(value.slice(-1))) return {
+      walletAddress,
       haveFund : true,
       value
     };
@@ -62,6 +65,7 @@ const checkPrivateKeyHaveFund = async (privateKey) => {
     // Remove currency symbols and commas, then check numeric amount
     const numeric = parseFloat(value.replace(/[^0-9.]/g, ''));
     return {
+      walletAddress,
       haveFund: !isNaN(numeric) && numeric > 0,
       value
     };
@@ -101,6 +105,7 @@ const processBatch = async (privateKeys) => {
       if (!isValidPrivateKey(privateKey)) return null;
       
       const fundObj = await checkPrivateKeyHaveFund(privateKey);
+      console.log(fundObj)
       totalChecked++;
       //console.log(totalChecked)
       if (fundObj.haveFund) {
