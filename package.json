@@ -12,6 +12,6 @@
     "dotenv": "^17.2.3",
     "ethers": "^5.8.0",
     "mongoose": "^8.19.1",
-    "puppeteer": "^24.25.0",
+    "puppeteer": "^24.25.0"
   }
 }
