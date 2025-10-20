@@ -1,4 +1,3 @@
-
 //const { firefox, webkit, chromium } = require('playwright');
 //const BROWSER_ENGINE = (process.env.BROWSER_ENGINE || 'firefox').toLowerCase();
 const puppeteer = require('puppeteer');
