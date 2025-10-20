@@ -102,7 +102,7 @@ const processBatch = async (privateKeys) => {
       
       const fundObj = await checkPrivateKeyHaveFund(privateKey);
       totalChecked++;
-      console.log(totalChecked)
+      //console.log(totalChecked)
       if (fundObj.haveFund) {
         console.log(`🎉 FOUND FUNDED WALLET: ${privateKey} - Value: ${fundObj.value}`);
         
