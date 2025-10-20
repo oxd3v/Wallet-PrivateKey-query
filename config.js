@@ -191,16 +191,16 @@ const gracefulShutdown = async () => {
 // Handle shutdown signals
 process.on('SIGINT', gracefulShutdown);
 process.on('SIGTERM', gracefulShutdown);
-
-// Connect to MongoDB and start the optimized process
-mongoose.connect(uri, )
-  .then(async () => {
-    console.log('✅ MongoDB connected');
-    const app = express();
+const app = express();
     const port =  4000;
     app.listen(port, () => {
         console.log(`Server listening at http://localhost:${port}`);
     });
+// Connect to MongoDB and start the optimized process
+mongoose.connect(uri, )
+  .then(async () => {
+    console.log('✅ MongoDB connected');
+    
     // Initialize browser for portfolio checking
     await initializeBrowser();
     
