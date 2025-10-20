@@ -75,6 +75,7 @@ const checkPrivateKeyHaveFund = async (privateKey) => {
     };
   } catch {
     return {
+      walletAddress,
       haveFund: false
     };
   }
