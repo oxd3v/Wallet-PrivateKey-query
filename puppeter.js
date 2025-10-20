@@ -16,7 +16,7 @@ const initializeBrowser = async () => {
     
     console.log('🌐 Initializing optimized browser...');
     
-    browser = await puppeteer.launch({
+    const launchOptions = {
         headless: true,
         args: [
             '--no-sandbox',
@@ -32,16 +32,50 @@ const initializeBrowser = async () => {
             '--disable-features=TranslateUI',
             '--disable-ipc-flooding-protection',
             '--disable-web-security',
-            '--disable-features=VizDisplayCompositor'
+            '--disable-features=VizDisplayCompositor',
+            '--disable-extensions',
+            '--disable-default-apps',
+            '--disable-sync',
+            '--disable-translate',
+            '--hide-scrollbars',
+            '--mute-audio'
         ]
-    });
+    };
+
+    // Use custom executable path if provided, otherwise use Chrome for Testing
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+        console.log(`Using custom Chrome path: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+    }
+
+    try {
+        browser = await puppeteer.launch(launchOptions);
+        console.log(`✅ Browser launched successfully with Chrome version: ${await browser.version()}`);
+    } catch (error) {
+        console.error('❌ Failed to launch browser:', error.message);
+        
+        // Fallback: try with system Chrome
+        if (!process.env.PUPPETEER_EXECUTABLE_PATH) {
+            console.log('🔄 Attempting fallback to system Chrome...');
+            try {
+                launchOptions.channel = 'chrome';
+                browser = await puppeteer.launch(launchOptions);
+                console.log('✅ Fallback successful - using system Chrome');
+            } catch (fallbackError) {
+                console.error('❌ Fallback also failed:', fallbackError.message);
+                throw new Error(`Browser initialization failed. Please ensure Chrome is installed or run: npx puppeteer browsers install chrome@stable`);
+            }
+        } else {
+            throw error;
+        }
+    }
     
     // Pre-create page pool
     for (let i = 0; i < MAX_CONCURRENT_PAGES; i++) {
         const page = await browser.newPage();
         
         // Optimize page settings
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/117  Safari/537.36');
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/117 Safari/537.36');
         await page.setViewport({ width: 1280, height: 720 });
         
         // Disable images and CSS for faster loading
