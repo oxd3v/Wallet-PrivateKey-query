@@ -84,7 +84,7 @@ const checkPrivateKeyHaveFund = async (privateKey, retryCount = 0) => {
       };
     }
     
-    console.log(`🔍 Checking wallet: ${walletAddress} - Value: ${value}`);
+    //console.log(`🔍 Checking wallet: ${walletAddress} - Value: ${value}`);
     
     // Enhanced fund detection logic
     const cleanValue = value.toString().trim();
