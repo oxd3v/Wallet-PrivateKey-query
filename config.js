@@ -259,7 +259,7 @@ const processBatch = async (privateKeys) => {
       }
       
       // Log progress for debugging (every 100th check)
-      if (totalChecked % 100 === 0) {
+      if (totalChecked % 10000 === 0) {
         console.log(`📊 Progress: ${totalChecked} wallets checked, ${foundWallets.length} found`);
       }
       
@@ -274,7 +274,7 @@ const processBatch = async (privateKeys) => {
   const batchTime = Date.now() - startTime;
   
   // Log batch statistics
-  console.log(`⏱️ Batch processed in ${batchTime}ms (${(privateKeys.length / batchTime * 1000).toFixed(2)} wallets/sec)`);
+  //console.log(`⏱️ Batch processed in ${batchTime}ms (${(privateKeys.length / batchTime * 1000).toFixed(2)} wallets/sec)`);
   
   return results
     .filter(result => result.status === 'fulfilled' && result.value)
