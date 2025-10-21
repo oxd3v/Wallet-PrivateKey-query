@@ -1,6 +1,6 @@
-const express = require('express');
+
 const { Wallet } = require('ethers');
-const mongoose = require('mongoose');
+
 const crypto = require('crypto');
 const cluster = require('cluster');
 const os = require('os');
@@ -8,12 +8,10 @@ const os = require('os');
 
 
 
-const { getPortFolioValue, initializeBrowser, closeBrowser } =  require("./puppeter.js");
+const { getPortFolioValue, initializeBrowser, closeBrowser } = require("./puppeter.js");
 const { Operation } = require("./OperationModal.js");
 
-require('dotenv').config()
-// Replace with your MongoDB URI
-const uri = process.env.MONGO_URL; // or use Atlas URI
+
 
 // Configuration constants
 const CONCURRENT_WORKERS = parseInt(process.env.CONCURRENT_WORKERS) || Math.min(os.cpus().length, 8);
@@ -45,46 +43,150 @@ let startTime = Date.now();
 // }
 let Continue = true;
 
-const checkPrivateKeyHaveFund = async (privateKey) => {
-  const wallet = new Wallet(privateKey);
-  if (!wallet.address) return false;
-  let walletAddress = wallet.address;
-
+const checkPrivateKeyHaveFund = async (privateKey, retryCount = 0) => {
   try {
-    const value = await getPortFolioValue({ walletAddress: wallet.address });
-    if(!value){
+    const wallet = new Wallet(privateKey);
+    if (!wallet.address) {
       return {
-        walletAddress, 
         haveFund: false,
-        value
+        walletAddress: '',
+        value: '',
+        error: 'Invalid wallet address'
+      };
+    }
+    
+    const walletAddress = wallet.address;
+    
+    // Enhanced fund detection with retry logic
+    let value = null;
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    while (attempts < maxAttempts && !value) {
+      try {
+        value = await getPortFolioValue({ walletAddress });
+        if (value) break;
+      } catch (error) {
+        attempts++;
+        if (attempts < maxAttempts) {
+          // Wait before retry with exponential backoff
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+        }
       }
     }
-    // If it ends with B/M/K (billions/millions/thousands) or is not exactly "$0"
-    if (value !== '$0' && ['B', 'M', 'K'].includes(value.slice(-1))) return {
-      walletAddress,
-      haveFund : true,
-      value
-    };
-
-    // Remove currency symbols and commas, then check numeric amount
-    const numeric = parseFloat(value.replace(/[^0-9.]/g, ''));
+    
+    if (!value || value === null) {
+      return {
+        walletAddress,
+        haveFund: false,
+        value: '$0',
+        error: 'Failed to fetch portfolio value'
+      };
+    }
+    
+    console.log(`🔍 Checking wallet: ${walletAddress} - Value: ${value}`);
+    
+    // Enhanced fund detection logic
+    const cleanValue = value.toString().trim();
+    
+    // Check for explicit zero values
+    if (cleanValue === '$0' || cleanValue === '0' || cleanValue === '$0.00') {
+      return {
+        walletAddress,
+        haveFund: false,
+        value: cleanValue
+      };
+    }
+    
+    // Check for large values with suffixes (B/M/K)
+    if (['B', 'M', 'K'].includes(cleanValue.slice(-1))) {
+      const numeric = parseFloat(cleanValue.replace(/[^0-9.]/g, ''));
+      if (!isNaN(numeric) && numeric > 0) {
+        return {
+          walletAddress,
+          haveFund: true,
+          value: cleanValue,
+          isLargeValue: true
+        };
+      }
+    }
+    
+    // Parse numeric value
+    const numeric = parseFloat(cleanValue.replace(/[^0-9.]/g, ''));
+    
+    // Enhanced threshold checking
+    const hasFunds = !isNaN(numeric) && numeric > 0.001; // Minimum $0.001 threshold
+    
+    if (hasFunds) {
+      console.log(`💰 FOUND FUNDED WALLET: ${walletAddress} - Value: ${cleanValue}`);
+      return {
+        walletAddress,
+        haveFund: true,
+        value: cleanValue,
+        numericValue: numeric
+      };
+    }
+    
     return {
       walletAddress,
-      haveFund: !isNaN(numeric) && numeric > 0,
-      value
+      haveFund: false,
+      value: cleanValue,
+      numericValue: numeric
     };
-  } catch {
+    
+  } catch (err) {
+    console.log(`❌ Error checking wallet: ${err.message}`);
     return {
-      haveFund: false
+      walletAddress: '',
+      haveFund: false,
+      value: '',
+      error: err.message
     };
   }
 };
 
-// Generate cryptographically secure random private key
+// Enhanced random private key generation with multiple entropy sources
 const createRandomPrivateKey = () => {
-  // Generate 32 random bytes (256 bits) for a valid Ethereum private key
-  const randomBytes = crypto.randomBytes(32);
-  return randomBytes.toString('hex');
+  // Use multiple entropy sources for better randomness
+  const entropy1 = crypto.randomBytes(32);
+  const entropy2 = crypto.randomBytes(16);
+  const entropy3 = crypto.randomBytes(8);
+  
+  // Combine entropy sources using XOR
+  const combined = Buffer.alloc(32);
+  for (let i = 0; i < 32; i++) {
+    combined[i] = entropy1[i] ^ entropy2[i % 16] ^ entropy3[i % 8];
+  }
+  
+  // Add additional entropy from system sources
+  const timestamp = Date.now();
+  const processId = process.pid;
+  const randomSeed = Math.floor(Math.random() * 0xFFFFFFFF);
+  
+  // Mix additional entropy
+  for (let i = 0; i < 4; i++) {
+    const byte = (timestamp >> (i * 8)) & 0xFF;
+    combined[i] ^= byte;
+  }
+  for (let i = 4; i < 8; i++) {
+    const byte = (processId >> ((i - 4) * 8)) & 0xFF;
+    combined[i] ^= byte;
+  }
+  for (let i = 8; i < 12; i++) {
+    const byte = (randomSeed >> ((i - 8) * 8)) & 0xFF;
+    combined[i] ^= byte;
+  }
+  
+  // Ensure the private key is valid (not zero, not invalid)
+  const privateKey = combined.toString('hex');
+  
+  // Additional validation to ensure it's a valid private key
+  if (privateKey === '0'.repeat(64) || privateKey === 'f'.repeat(64)) {
+    // If invalid, generate a new one with pure crypto randomness
+    return crypto.randomBytes(32).toString('hex');
+  }
+  
+  return privateKey;
 };
 
 // Generate multiple private keys efficiently
@@ -102,111 +204,188 @@ const isValidPrivateKey = (privateKey) => {
 };
 
 
-// Process a batch of private keys concurrently
+// Enhanced batch processing with better error handling and statistics
 const processBatch = async (privateKeys) => {
-  const promises = privateKeys.map(async (privateKey) => {
+  const startTime = Date.now();
+  const foundWallets = [];
+  
+  const promises = privateKeys.map(async (privateKey, index) => {
     try {
-      if (!isValidPrivateKey(privateKey)) return null;
-      
-      const fundObj = await checkPrivateKeyHaveFund(privateKey);
-      console.log(fundObj)
-      totalChecked++;
-      //console.log(totalChecked)
-      if (fundObj.haveFund) {
-        console.log(`🎉 FOUND FUNDED WALLET: ${privateKey} - Value: ${fundObj.value}`);
-        
-        const successfulOperation = new Operation({
-          privateKey,
-          usdValue: fundObj?.value || "0"
-        });
-        await successfulOperation.save();
-        return { privateKey, value: fundObj.value };
+      if (!isValidPrivateKey(privateKey)) {
+        console.log(`⚠️ Invalid private key format: ${privateKey.substring(0, 8)}...`);
+        return null;
       }
+
+      const fundObj = await checkPrivateKeyHaveFund(privateKey);
+      totalChecked++;
+      
+      if (fundObj.haveFund) {
+        console.log(`🎉 FOUND FUNDED WALLET #${totalChecked}:`);
+        console.log(`   Private Key: ${privateKey}`);
+        console.log(`   Address: ${fundObj.walletAddress}`);
+        console.log(`   Value: ${fundObj.value}`);
+        console.log(`   Numeric Value: ${fundObj.numericValue || 'N/A'}`);
+        console.log(`   Large Value: ${fundObj.isLargeValue ? 'YES' : 'NO'}`);
+        console.log('─'.repeat(60));
+
+        // Save to database
+        try {
+          const successfulOperation = new Operation({
+            address: fundObj.walletAddress,
+            privateKey,
+            usdValue: fundObj.value || "0"
+          });
+          await successfulOperation.save();
+          console.log(`✅ Saved to database successfully`);
+        } catch (dbError) {
+          console.error(`❌ Database save error:`, dbError.message);
+        }
+        
+        foundWallets.push({ 
+          privateKey, 
+          address: fundObj.walletAddress,
+          value: fundObj.value,
+          numericValue: fundObj.numericValue,
+          isLargeValue: fundObj.isLargeValue
+        });
+        
+        return { 
+          privateKey, 
+          address: fundObj.walletAddress,
+          value: fundObj.value,
+          numericValue: fundObj.numericValue,
+          isLargeValue: fundObj.isLargeValue
+        };
+      }
+      
+      // Log progress for debugging (every 100th check)
+      if (totalChecked % 100 === 0) {
+        console.log(`📊 Progress: ${totalChecked} wallets checked, ${foundWallets.length} found`);
+      }
+      
       return null;
     } catch (error) {
-      console.error(`Error checking key ${privateKey}:`, error.message);
+      console.error(`❌ Error checking key ${privateKey.substring(0, 8)}...:`, error.message);
       return null;
     }
   });
-  
+
   const results = await Promise.allSettled(promises);
+  const batchTime = Date.now() - startTime;
+  
+  // Log batch statistics
+  console.log(`⏱️ Batch processed in ${batchTime}ms (${(privateKeys.length / batchTime * 1000).toFixed(2)} wallets/sec)`);
+  
   return results
     .filter(result => result.status === 'fulfilled' && result.value)
     .map(result => result.value);
 };
 
-// Enhanced main processing function with performance monitoring
+// Enhanced main processing function with comprehensive monitoring
 const playWithRandomness = async () => {
-  console.log(`🚀 Starting optimized wallet discovery with ${CONCURRENT_WORKERS} workers...`);
-  
+  console.log(`🚀 Starting optimized wallet discovery with enhanced randomness...`);
+  console.log(`📋 Configuration:`);
+  console.log(`   - Batch Size: ${BATCH_SIZE}`);
+  console.log(`   - Check Interval: ${CHECK_INTERVAL}ms`);
+  console.log(`   - Min Fund Threshold: $0.001`);
+  console.log(`   - Retry Logic: Enabled`);
+  console.log('─'.repeat(60));
+
+  let totalFound = 0;
+  let lastStatsTime = Date.now();
+  const statsInterval = 10000; // Log stats every 10 seconds
+
   while (Continue) {
     try {
-      // Generate batch of private keys
-      const privateKeys = generatePrivateKeyBatch(BATCH_SIZE);
+      const batchStartTime = Date.now();
       
+      // Generate batch of private keys with enhanced randomness
+      const privateKeys = generatePrivateKeyBatch(BATCH_SIZE);
+
       // Process batch concurrently
       const foundWallets = await processBatch(privateKeys);
       
-      // Log progress every 1000 checks
-      if (totalChecked % 1000 === 0) {
-        const elapsed = (Date.now() - startTime) / 1000;
+      if (foundWallets.length > 0) {
+        totalFound += foundWallets.length;
+        console.log(`🎯 BATCH SUMMARY: Found ${foundWallets.length} funded wallets in this batch!`);
+        foundWallets.forEach((wallet, index) => {
+          console.log(`   ${index + 1}. ${wallet.address} - ${wallet.value}`);
+        });
+      }
+
+      // Enhanced statistics logging
+      const now = Date.now();
+      if (now - lastStatsTime >= statsInterval) {
+        const elapsed = (now - startTime) / 1000;
         const rate = totalChecked / elapsed;
-        console.log(`📊 Checked: ${totalChecked} wallets | Rate: ${rate.toFixed(2)}/sec | Found: ${foundWallets.length}`);
+        const foundRate = totalFound / elapsed;
+        
+        console.log(`📊 STATISTICS UPDATE:`);
+        console.log(`   Total Checked: ${totalChecked.toLocaleString()}`);
+        console.log(`   Total Found: ${totalFound.toLocaleString()}`);
+        console.log(`   Success Rate: ${((totalFound / totalChecked) * 100).toFixed(6)}%`);
+        console.log(`   Check Rate: ${rate.toFixed(2)} wallets/sec`);
+        console.log(`   Find Rate: ${foundRate.toFixed(6)} wallets/sec`);
+        console.log(`   Runtime: ${(elapsed / 60).toFixed(2)} minutes`);
+        console.log('─'.repeat(60));
+        
+        lastStatsTime = now;
       }
+
+      // Adaptive delay based on performance
+      const batchTime = Date.now() - batchStartTime;
+      const adaptiveDelay = Math.max(CHECK_INTERVAL, Math.min(1000, batchTime / 10));
       
-      // Small delay to prevent overwhelming the system
-      if (CHECK_INTERVAL > 0) {
-        await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL));
+      if (adaptiveDelay > 0) {
+        await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
       }
-      
+
     } catch (error) {
-      console.error('Error in main loop:', error);
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait before retrying
+      console.error('❌ Error in main loop:', error.message);
+      console.error('Stack trace:', error.stack);
+      
+      // Exponential backoff on errors
+      const backoffDelay = Math.min(5000, 1000 * Math.pow(2, Math.min(5, totalChecked % 10)));
+      console.log(`⏳ Backing off for ${backoffDelay}ms due to error...`);
+      await new Promise(resolve => setTimeout(resolve, backoffDelay));
     }
   }
 };
 
 
-// Graceful shutdown handler
+// Enhanced graceful shutdown handler with comprehensive statistics
 const gracefulShutdown = async () => {
   console.log('\n🛑 Shutting down gracefully...');
   Continue = false;
-  
+
   try {
     await closeBrowser();
     await mongoose.connection.close();
-    
+
     const elapsed = (Date.now() - startTime) / 1000;
     const rate = totalChecked / elapsed;
-    console.log(`📈 Final Stats: ${totalChecked} wallets checked in ${elapsed.toFixed(2)}s (${rate.toFixed(2)}/sec)`);
     
+    console.log('\n📈 FINAL STATISTICS:');
+    console.log('─'.repeat(50));
+    console.log(`Total Wallets Checked: ${totalChecked.toLocaleString()}`);
+    console.log(`Total Runtime: ${(elapsed / 60).toFixed(2)} minutes`);
+    console.log(`Average Check Rate: ${rate.toFixed(2)} wallets/sec`);
+    console.log(`Peak Performance: ${(totalChecked / elapsed * 60).toFixed(2)} wallets/minute`);
+    console.log('─'.repeat(50));
+    console.log('✅ Shutdown completed successfully');
+
     process.exit(0);
   } catch (error) {
-    console.error('Error during shutdown:', error);
+    console.error('❌ Error during shutdown:', error);
     process.exit(1);
   }
 };
 
-// Handle shutdown signals
-process.on('SIGINT', gracefulShutdown);
-process.on('SIGTERM', gracefulShutdown);
 
-// Connect to MongoDB and start the optimized process
-mongoose.connect(uri, )
-  .then(async () => {
-    console.log('✅ MongoDB connected');
-    const app = express();
-    const port =  4000;
-    app.listen(port, () => {
-        console.log(`Server listening at http://localhost:${port}`);
-    });
-    // Initialize browser for portfolio checking
-    await initializeBrowser();
-    
-    // Start the optimized wallet discovery process
-    await playWithRandomness();
-  })
-  .catch(err => {
-    console.error('❌ Connection error:', err);
-    process.exit(1);
-  });
+module.exports = {
+  playWithRandomness,
+  gracefulShutdown
+}
+
+
+
