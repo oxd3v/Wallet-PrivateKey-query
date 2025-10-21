@@ -384,7 +384,8 @@ const gracefulShutdown = async () => {
 
 module.exports = {
   playWithRandomness,
-  gracefulShutdown
+  gracefulShutdown,
+  totalChecked
 }
 
 
