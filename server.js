@@ -1,7 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const { initializeBrowser } = require('./puppeter.js');
-const { playWithRandomness, gracefulShutdown } = require('./config.js');
+const { playWithRandomness, gracefulShutdown,totalChecked } = require('./config.js');
 require('dotenv').config()
 // Replace with your MongoDB URI
 const uri = process.env.MONGO_URL; // or use Atlas URI
@@ -22,7 +22,7 @@ mongoose.connect(uri,)
     playWithRandomness();
 
     app.get('/', (req, res) => {
-      res.send('Hello from TypeScript Node.js Backend!');
+      res.send(`Hello from TypeScript Node.js Backend! checked total: ${totalChecked}`);
     });
     app.listen(port, () => {
       console.log(`Server listening at http://localhost:${port}`);
