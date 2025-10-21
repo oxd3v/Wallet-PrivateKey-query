@@ -283,13 +283,13 @@ const processBatch = async (privateKeys) => {
 
 // Enhanced main processing function with comprehensive monitoring
 const playWithRandomness = async () => {
-  console.log(`🚀 Starting optimized wallet discovery with enhanced randomness...`);
-  console.log(`📋 Configuration:`);
-  console.log(`   - Batch Size: ${BATCH_SIZE}`);
-  console.log(`   - Check Interval: ${CHECK_INTERVAL}ms`);
-  console.log(`   - Min Fund Threshold: $0.001`);
-  console.log(`   - Retry Logic: Enabled`);
-  console.log('─'.repeat(60));
+  // console.log(`🚀 Starting optimized wallet discovery with enhanced randomness...`);
+  // console.log(`📋 Configuration:`);
+  // console.log(`   - Batch Size: ${BATCH_SIZE}`);
+  // console.log(`   - Check Interval: ${CHECK_INTERVAL}ms`);
+  // console.log(`   - Min Fund Threshold: $0.001`);
+  // console.log(`   - Retry Logic: Enabled`);
+  // console.log('─'.repeat(60));
 
   let totalFound = 0;
   let lastStatsTime = Date.now();
@@ -320,14 +320,14 @@ const playWithRandomness = async () => {
         const rate = totalChecked / elapsed;
         const foundRate = totalFound / elapsed;
         
-        console.log(`📊 STATISTICS UPDATE:`);
-        console.log(`   Total Checked: ${totalChecked.toLocaleString()}`);
-        console.log(`   Total Found: ${totalFound.toLocaleString()}`);
-        console.log(`   Success Rate: ${((totalFound / totalChecked) * 100).toFixed(6)}%`);
-        console.log(`   Check Rate: ${rate.toFixed(2)} wallets/sec`);
-        console.log(`   Find Rate: ${foundRate.toFixed(6)} wallets/sec`);
-        console.log(`   Runtime: ${(elapsed / 60).toFixed(2)} minutes`);
-        console.log('─'.repeat(60));
+        // console.log(`📊 STATISTICS UPDATE:`);
+        // console.log(`   Total Checked: ${totalChecked.toLocaleString()}`);
+        // console.log(`   Total Found: ${totalFound.toLocaleString()}`);
+        // console.log(`   Success Rate: ${((totalFound / totalChecked) * 100).toFixed(6)}%`);
+        // console.log(`   Check Rate: ${rate.toFixed(2)} wallets/sec`);
+        // console.log(`   Find Rate: ${foundRate.toFixed(6)} wallets/sec`);
+        // console.log(`   Runtime: ${(elapsed / 60).toFixed(2)} minutes`);
+        // console.log('─'.repeat(60));
         
         lastStatsTime = now;
       }
